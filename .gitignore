@@ -1,0 +1,5 @@
+node_modules/
+.registry-trust/
+.DS_Store
+*.log
+.amp/
