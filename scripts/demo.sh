@@ -13,13 +13,20 @@ trap cleanup EXIT
 
 PACKAGE="${1:-is-odd}"
 EXACT_PACKAGE=""
+STEP_SLEEP="${REGISTRY_TRUST_DEMO_SLEEP:-0.45}"
+
+pause() {
+  sleep "$STEP_SLEEP"
+}
 
 run() {
   echo
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "$ $*"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  pause
   "$@"
+  pause
 }
 
 run_expect() {
@@ -30,11 +37,13 @@ run_expect() {
   echo "$ $*"
   echo "expected exit: $expected"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  pause
   set +e
   "$@"
   local actual=$?
   set -e
   echo "exit: $actual"
+  pause
   if [[ "$actual" != "$expected" ]]; then
     echo "Expected exit $expected but got $actual" >&2
     exit 1
@@ -46,6 +55,7 @@ run_gate_install() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "$ REGISTRY_TRUST_HOME=... bun run src/cli.ts check $EXACT_PACKAGE && (cd $INSTALL_DIR && bun init -y && bun add $EXACT_PACKAGE)"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  pause
   REGISTRY_TRUST_HOME="$STORE_DIR" bun run src/cli.ts check "$EXACT_PACKAGE" && (
     cd "$INSTALL_DIR"
     bun init -y
@@ -66,6 +76,7 @@ echo "package: $PACKAGE"
 echo "isolated REGISTRY_TRUST_HOME: $STORE_DIR"
 echo "temp install dir: $INSTALL_DIR"
 echo "runtime: $(bun --version)"
+pause
 
 run bun run check
 run git status --short
@@ -80,11 +91,13 @@ echo
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "$ env REGISTRY_TRUST_HOME=... bun run src/cli.ts review $PACKAGE --json"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+pause
 JSON_REPORT="$(REGISTRY_TRUST_HOME="$STORE_DIR" bun run src/cli.ts review "$PACKAGE" --json)"
 printf '%s\n' "$JSON_REPORT"
 EXACT_PACKAGE="$(printf '%s\n' "$JSON_REPORT" | json_field identity.name)@$(printf '%s\n' "$JSON_REPORT" | json_field identity.version)"
 echo
 echo "resolved exact package: $EXACT_PACKAGE"
+pause
 
 # 3. Before an explicit allow decision, check is a gate and must fail for WARN.
 run_expect 1 env REGISTRY_TRUST_HOME="$STORE_DIR" bun run src/cli.ts check "$EXACT_PACKAGE"
@@ -104,4 +117,5 @@ run env REGISTRY_TRUST_HOME="$STORE_DIR" bun run src/cli.ts deny "$EXACT_PACKAGE
 run_expect 1 env REGISTRY_TRUST_HOME="$STORE_DIR" bun run src/cli.ts check "$EXACT_PACKAGE"
 
 echo
+pause
 echo "Demo completed successfully."
