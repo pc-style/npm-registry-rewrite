@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { formatDecision, formatReport } from "./format";
+import { formatCheck, formatDecision, formatReport } from "./format";
 import { reviewPackage } from "./reviewer";
 import { parsePackageSpec } from "./spec";
 import { LocalRegistryStore } from "./store";
@@ -33,7 +33,7 @@ export async function main(argv = Bun.argv.slice(2)): Promise<number> {
     if (command === "check") {
       const input = requirePackageArg(args);
       const report = await reviewPackage(input, { store, refresh: false });
-      print(flags.json ? JSON.stringify(report.verdict, null, 2) : `${report.identity.name}@${report.identity.version}: ${report.verdict.status.toUpperCase()} (${report.verdict.score}/100)`);
+      print(flags.json ? JSON.stringify(report.verdict, null, 2) : formatCheck(report));
       return report.verdict.status === "allow" ? 0 : 1;
     }
 
