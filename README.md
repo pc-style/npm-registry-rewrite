@@ -8,9 +8,9 @@ A Bun-only MVP for an agent-first npm registry trust layer. It reviews a public 
 
 - package identity: name, version, description, license, homepage, repository
 - maintainer and publish/change signals
-- tarball size plus reported integrity/shasum
+- tarball size plus cryptographic verification against reported integrity/shasum
 - lifecycle scripts and dependency counts
-- notable packed files such as binaries, native `.node` files, `.wasm`, and install scripts
+- notable and suspicious packed files such as binaries, native `.node` files, `.wasm`, install scripts, shell scripts, large files, and sensitive-looking paths
 - an explainable verdict: `ALLOW`, `WARN`, or `DENY`
 
 The MVP is intentionally conservative: clean packages remain `WARN` until a human/agent saves an explicit `allow` decision.
@@ -80,10 +80,16 @@ Supported now:
 - package specs in `name`, `name@version`, `@scope/name`, and `@scope/name@version` form
 - local JSON report/decision cache
 - human-readable and JSON report output
+- tarball byte verification against `dist.integrity`, with `dist.shasum` fallback
+- deterministic suspicious packed-content findings
 
 Intentionally out of scope for this MVP:
 
 - semver ranges, aliases, git/file/url specs, and alternate registries
 - a local server or install wrapper
 - executing packages or scripts
-- verifying tarball bytes against `dist.integrity` / `dist.shasum` (fields are reported but not cryptographically checked yet)
+- AI auditing and release-to-release diffing
+
+## License
+
+MIT
