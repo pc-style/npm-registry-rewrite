@@ -1,4 +1,4 @@
-import type { PackageReport, RiskSignal, UserDecision, Verdict } from "./types";
+import type { PackageReport, RiskSignal, SuspiciousContentFinding, UserDecision, Verdict } from "./types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -17,12 +17,56 @@ export function collectRiskSignals(report: Omit<PackageReport, "riskSignals" | "
     signals.push({ id: "missing-integrity", severity: "warn", message: "Version metadata lacks a sha512 integrity field." });
   }
 
+  if (report.tarball.verification?.status === "failed") {
+    signals.push({
+      id: "tarball-verification-failed",
+      severity: "block",
+      message: report.tarball.verification.message
+    });
+  }
+
+  if (report.tarball.verification?.status === "unverified") {
+    signals.push({
+      id: "tarball-unverified",
+      severity: "warn",
+      message: report.tarball.verification.message
+    });
+  }
+
   if (report.scripts.hasLifecycle) {
     signals.push({
       id: "lifecycle-scripts",
       severity: "warn",
       message: `Lifecycle scripts found: ${Object.keys(report.scripts.lifecycle).join(", ")}.`
     });
+  }
+
+  const suspicious = report.files.suspiciousContent;
+  if (suspicious) {
+    pushSuspiciousSignal(
+      signals,
+      "native-binaries",
+      "warn",
+      "Native binary files are packed",
+      suspicious.nativeBinaries
+    );
+    pushSuspiciousSignal(signals, "wasm-files", "warn", "WebAssembly files are packed", suspicious.wasmFiles);
+    pushSuspiciousSignal(
+      signals,
+      "packed-install-scripts",
+      "warn",
+      "Install or lifecycle-looking script files are packed",
+      suspicious.installScripts
+    );
+    pushSuspiciousSignal(signals, "shell-scripts", "warn", "Shell or platform script files are packed", suspicious.shellScripts);
+    pushSuspiciousSignal(signals, "large-packed-files", "warn", "Unusually large packed files are present", suspicious.largeFiles);
+    pushSuspiciousSignal(
+      signals,
+      "sensitive-paths",
+      "warn",
+      "Sensitive-looking paths are packed",
+      suspicious.sensitivePaths
+    );
   }
 
   if ((report.publish.publishAgeDays ?? Infinity) < 7) {
@@ -46,6 +90,22 @@ export function collectRiskSignals(report: Omit<PackageReport, "riskSignals" | "
   }
 
   return signals;
+}
+
+function pushSuspiciousSignal(
+  signals: RiskSignal[],
+  id: string,
+  severity: RiskSignal["severity"],
+  label: string,
+  finding: SuspiciousContentFinding
+): void {
+  if (finding.count === 0) return;
+  const examples = finding.paths.length ? ` Examples: ${finding.paths.join(", ")}.` : "";
+  signals.push({
+    id,
+    severity,
+    message: `${label}: ${finding.count} file${finding.count === 1 ? "" : "s"}, ${formatBytes(finding.bytes)}.${examples}`
+  });
 }
 
 export function makeVerdict(signals: RiskSignal[], decision?: UserDecision): Verdict {
@@ -112,4 +172,10 @@ export function daysSince(iso: string | undefined): number | undefined {
 
 function looksTyposquatty(name: string): boolean {
   return /-{2,}|_{1,}|\.js$|\d{3,}/.test(name);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }

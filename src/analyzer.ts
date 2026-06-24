@@ -2,7 +2,7 @@ import { createGunzip } from "node:zlib";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import tar from "tar-stream";
-import type { DependencySummary, FileSummary, ScriptSummary } from "./types";
+import type { DependencySummary, FileSummary, ScriptSummary, SuspiciousContentFinding } from "./types";
 
 const LIFECYCLE_SCRIPTS = new Set([
   "preinstall",
@@ -14,6 +14,22 @@ const LIFECYCLE_SCRIPTS = new Set([
   "prepublish",
   "prepublishOnly"
 ]);
+
+const LARGE_FILE_BYTES = 1024 * 1024;
+const FINDING_PATH_LIMIT = 8;
+const NATIVE_BINARY_EXTENSIONS = new Set([".node", ".so", ".dylib", ".dll", ".exe"]);
+const SHELL_SCRIPT_EXTENSIONS = new Set([".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat", ".cmd"]);
+const INSTALL_SCRIPT_BASENAMES = new Set([
+  "preinstall",
+  "install",
+  "postinstall",
+  "prepack",
+  "prepare",
+  "postpack",
+  "prepublish",
+  "prepublishonly"
+]);
+const SENSITIVE_PATH_PATTERN = /(^|[._/-])(credential|credentials|token|tokens|secret|secrets|ssh|env|private[-_]?key|id_rsa|id_dsa|id_ecdsa|id_ed25519)([._/-]|$)/i;
 
 export type TarballAnalysis = {
   scripts: ScriptSummary;
@@ -27,7 +43,8 @@ export async function analyzeTarball(bytes: Uint8Array): Promise<TarballAnalysis
     fileCount: 0,
     unpackedBytes: 0,
     packageJsonFound: false,
-    notablePaths: []
+    notablePaths: [],
+    suspiciousContent: emptySuspiciousContentSummary()
   };
   let packageJson: Record<string, unknown> | undefined;
 
@@ -39,6 +56,7 @@ export async function analyzeTarball(bytes: Uint8Array): Promise<TarballAnalysis
         files.fileCount += 1;
         files.unpackedBytes += size;
         collectNotablePath(files, name);
+        collectSuspiciousContent(files, name, size);
       }
 
       if (name === "package/package.json") {
@@ -69,6 +87,21 @@ export async function analyzeTarball(bytes: Uint8Array): Promise<TarballAnalysis
   };
 }
 
+function emptySuspiciousContentSummary(): FileSummary["suspiciousContent"] {
+  return {
+    nativeBinaries: emptyFinding(),
+    wasmFiles: emptyFinding(),
+    installScripts: emptyFinding(),
+    shellScripts: emptyFinding(),
+    largeFiles: emptyFinding(),
+    sensitivePaths: emptyFinding()
+  };
+}
+
+function emptyFinding(): SuspiciousContentFinding {
+  return { count: 0, bytes: 0, paths: [] };
+}
+
 function collectNotablePath(files: FileSummary, name: string): void {
   const lower = name.toLowerCase();
   if (
@@ -81,6 +114,41 @@ function collectNotablePath(files: FileSummary, name: string): void {
   ) {
     files.notablePaths.push(name);
   }
+}
+
+function collectSuspiciousContent(files: FileSummary, name: string, size: number): void {
+  const suspiciousContent = files.suspiciousContent;
+  if (!suspiciousContent) return;
+  const normalized = name.replace(/\\/g, "/");
+  const lower = normalized.toLowerCase();
+  const basename = lower.slice(lower.lastIndexOf("/") + 1);
+  const extension = basename.includes(".") ? basename.slice(basename.lastIndexOf(".")) : "";
+  const stem = extension ? basename.slice(0, -extension.length) : basename;
+
+  if (NATIVE_BINARY_EXTENSIONS.has(extension)) {
+    addFinding(suspiciousContent.nativeBinaries, name, size);
+  }
+  if (extension === ".wasm") {
+    addFinding(suspiciousContent.wasmFiles, name, size);
+  }
+  if (INSTALL_SCRIPT_BASENAMES.has(stem) || basename === "install.js" || basename === "postinstall.js") {
+    addFinding(suspiciousContent.installScripts, name, size);
+  }
+  if (SHELL_SCRIPT_EXTENSIONS.has(extension)) {
+    addFinding(suspiciousContent.shellScripts, name, size);
+  }
+  if (size >= LARGE_FILE_BYTES) {
+    addFinding(suspiciousContent.largeFiles, name, size);
+  }
+  if (SENSITIVE_PATH_PATTERN.test(lower)) {
+    addFinding(suspiciousContent.sensitivePaths, name, size);
+  }
+}
+
+function addFinding(finding: SuspiciousContentFinding, path: string, size: number): void {
+  finding.count += 1;
+  finding.bytes += size;
+  if (finding.paths.length < FINDING_PATH_LIMIT) finding.paths.push(path);
 }
 
 function summarizeScripts(scripts: Record<string, unknown> | undefined): ScriptSummary {

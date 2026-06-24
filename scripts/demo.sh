@@ -80,10 +80,24 @@ run_gate_install() {
 }
 
 json_field() {
-  python3 -c 'import json,sys; data=json.load(sys.stdin); cur=data
-for part in sys.argv[1].split("."):
-    cur=cur[part]
-print(cur)' "$1"
+  bun -e 'const data = JSON.parse(await Bun.stdin.text());
+let cur = data;
+for (const part of process.argv[1].split(".")) cur = cur[part];
+console.log(cur);' "$1"
+}
+
+json_optional_field() {
+  bun -e 'const data = JSON.parse(await Bun.stdin.text());
+const paths = process.argv.slice(1);
+for (const path of paths) {
+  let cur = data;
+  for (const part of path.split(".")) cur = cur?.[part];
+  if (cur !== undefined) {
+    console.log(typeof cur === "string" ? cur : JSON.stringify(cur));
+    process.exit(0);
+  }
+}
+process.exit(0);' "$@"
 }
 
 feature "environment + repo state"
@@ -115,6 +129,12 @@ printf '%s\n' "$JSON_REPORT"
 EXACT_PACKAGE="$(printf '%s\n' "$JSON_REPORT" | json_field identity.name)@$(printf '%s\n' "$JSON_REPORT" | json_field identity.version)"
 echo
 echo "resolved exact package: $EXACT_PACKAGE"
+pause
+
+feature "audit depth fields"
+echo "tarball byte verification: $(printf '%s\n' "$JSON_REPORT" | json_optional_field tarball.verification.status || true)"
+echo "tarball verification source: $(printf '%s\n' "$JSON_REPORT" | json_optional_field tarball.verification.source || true)"
+echo "suspicious packed content: $(printf '%s\n' "$JSON_REPORT" | json_optional_field files.suspiciousContent files.suspiciousPackedContent files.suspiciousPackedContents files.suspiciousFindings files.packedContentFindings || true)"
 pause
 
 # 3. Before an explicit allow decision, check is a gate and must fail for WARN.

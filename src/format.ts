@@ -20,8 +20,10 @@ export function formatReport(report: PackageReport, options: FormatOptions = {})
   lines.push("");
   lines.push(sectionTitle("Artifact", ansi));
   lines.push(detail("Tarball", `${formatBytes(report.tarball.bytes)}${report.tarball.integrity ? ", integrity present" : ", missing integrity"}`, ansi));
+  lines.push(detail("Tarball bytes", formatTarballVerification(report, ansi), ansi));
   lines.push(detail("Files", `${report.files.fileCount} files, ${formatBytes(report.files.unpackedBytes)} unpacked`, ansi));
   if (report.files.notablePaths.length) lines.push(detail("Notable paths", report.files.notablePaths.slice(0, 8).join(", "), ansi));
+  for (const line of formatSuspiciousPackedContent(report)) lines.push(detail("Packed content", line, ansi));
   lines.push(detail("Dependencies", `${report.dependencies.totalRuntime} runtime, ${report.dependencies.totalDeclared} declared`, ansi));
   lines.push(detail("Scripts", Object.keys(report.scripts.all).length ? Object.keys(report.scripts.all).join(", ") : "none", ansi));
 
@@ -83,6 +85,72 @@ function severityBadge(severity: PackageReport["riskSignals"][number]["severity"
   if (severity === "block") return ansi.red(text);
   if (severity === "warn") return ansi.yellow(text);
   return ansi.cyan(text);
+}
+
+function formatTarballVerification(report: PackageReport, ansi: ReturnType<typeof createAnsi>): string {
+  const verification = readRecord(readRecord(report.tarball)?.verification);
+  const status = verification?.status;
+  const source = typeof verification?.source === "string" ? verification.source : undefined;
+  const algorithm = typeof verification?.algorithm === "string" ? verification.algorithm : undefined;
+  const message = typeof verification?.message === "string" ? verification.message : undefined;
+  const suffix = [algorithm, source].filter(Boolean).join("/");
+  const detailText = suffix ? ` via ${suffix}` : "";
+
+  if (status === "verified") return `${ansi.green("verified")}${detailText}${message ? ` (${message})` : ""}`;
+  if (status === "failed") return `${ansi.red("failed")}${detailText}${message ? ` (${message})` : ""}`;
+  if (status === "unverified") return `${ansi.yellow("unverified")}${detailText}${message ? ` (${message})` : ""}`;
+  return `${ansi.yellow("unverified")} (no verification status reported)`;
+}
+
+function formatSuspiciousPackedContent(report: PackageReport): string[] {
+  const files = readRecord(report.files);
+  const suspiciousContent = readRecord(files?.suspiciousContent);
+  const summaryLines = suspiciousContent
+    ? Object.entries(suspiciousContent).flatMap(([kind, value]) => formatSuspiciousContentSummary(kind, value))
+    : [];
+  const findings = firstArray(
+    files?.suspiciousPackedContent,
+    files?.suspiciousPackedContents,
+    files?.suspiciousFindings,
+    files?.packedContentFindings
+  );
+  if (!findings?.length) return summaryLines;
+
+  return [...summaryLines, ...findings.slice(0, 8).map((finding) => {
+    if (typeof finding === "string") return finding;
+    const record = readRecord(finding);
+    if (!record) return String(finding);
+    const path = stringValue(record.path) ?? stringValue(record.file) ?? stringValue(record.name);
+    const kind = stringValue(record.kind) ?? stringValue(record.type) ?? stringValue(record.reason);
+    const severity = stringValue(record.severity);
+    const message = stringValue(record.message) ?? stringValue(record.description);
+    const label = [severity, kind].filter(Boolean).join(" ");
+    const prefix = path ? `${path}: ` : "";
+    const body = message ?? label;
+    return body ? `${prefix}${body}` : JSON.stringify(record);
+  })];
+}
+
+function formatSuspiciousContentSummary(kind: string, value: unknown): string[] {
+  const record = readRecord(value);
+  const count = typeof record?.count === "number" ? record.count : 0;
+  if (!record || count <= 0) return [];
+  const bytes = typeof record.bytes === "number" ? `, ${formatBytes(record.bytes)}` : "";
+  const paths = Array.isArray(record.paths) ? record.paths.filter((path): path is string => typeof path === "string").slice(0, 4) : [];
+  return [`${kind}: ${count} finding${count === 1 ? "" : "s"}${bytes}${paths.length ? ` (${paths.join(", ")})` : ""}`];
+}
+
+function firstArray(...values: unknown[]): unknown[] | undefined {
+  return values.find((value): value is unknown[] => Array.isArray(value));
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function formatBytes(bytes: number): string {

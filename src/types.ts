@@ -32,6 +32,31 @@ export type FileSummary = {
   unpackedBytes: number;
   packageJsonFound: boolean;
   notablePaths: string[];
+  suspiciousContent: SuspiciousContentSummary;
+};
+
+export type SuspiciousContentFinding = {
+  count: number;
+  bytes: number;
+  paths: string[];
+};
+
+export type SuspiciousContentSummary = {
+  nativeBinaries: SuspiciousContentFinding;
+  wasmFiles: SuspiciousContentFinding;
+  installScripts: SuspiciousContentFinding;
+  shellScripts: SuspiciousContentFinding;
+  largeFiles: SuspiciousContentFinding;
+  sensitivePaths: SuspiciousContentFinding;
+};
+
+export type TarballVerification = {
+  status: "verified" | "unverified" | "failed";
+  algorithm?: "sha512" | "sha1";
+  source?: "integrity" | "shasum";
+  expected?: string;
+  actual?: string;
+  message: string;
 };
 
 export type RiskSignal = {
@@ -77,6 +102,7 @@ export type PackageReport = {
     bytes: number;
     integrity?: string;
     shasum?: string;
+    verification?: TarballVerification;
   };
   scripts: ScriptSummary;
   dependencies: DependencySummary;

@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import { analyzeTarball } from "./analyzer";
 import { collectRiskSignals, daysSince, makeVerdict } from "./policy";
 import { parsePackageSpec } from "./spec";
-import type { PackageReport, RegistryMetadata, RegistryStore, RegistryVersion } from "./types";
+import type { PackageReport, RegistryMetadata, RegistryStore, RegistryVersion, TarballVerification } from "./types";
 import { RegistryClient } from "./registry-client";
 
 export type ReviewOptions = {
@@ -31,6 +32,7 @@ export async function reviewPackage(input: string, options: ReviewOptions): Prom
   }
 
   const tarballBytes = await client.fetchTarball(tarballUrl);
+  const verification = verifyTarball(tarballBytes, versionMetadata);
   const analysis = await analyzeTarball(tarballBytes);
   const generatedAt = new Date().toISOString();
   const baseReport = {
@@ -50,7 +52,8 @@ export async function reviewPackage(input: string, options: ReviewOptions): Prom
       url: tarballUrl,
       bytes: tarballBytes.byteLength,
       integrity: versionMetadata.dist?.integrity,
-      shasum: versionMetadata.dist?.shasum
+      shasum: versionMetadata.dist?.shasum,
+      verification
     },
     scripts: analysis.scripts,
     dependencies: analysis.dependencies,
@@ -81,4 +84,77 @@ function repositoryToString(repository: RegistryVersion["repository"]): string |
   if (!repository) return undefined;
   if (typeof repository === "string") return repository;
   return repository.url;
+}
+
+function verifyTarball(bytes: Uint8Array, versionMetadata: RegistryVersion): TarballVerification {
+  const integrity = versionMetadata.dist?.integrity;
+  if (integrity) {
+    return verifyIntegrity(bytes, integrity);
+  }
+
+  const shasum = versionMetadata.dist?.shasum;
+  if (shasum) {
+    const actual = createHash("sha1").update(bytes).digest("hex");
+    if (actual === shasum) {
+      return {
+        status: "verified",
+        algorithm: "sha1",
+        source: "shasum",
+        expected: shasum,
+        actual,
+        message: "Tarball bytes match npm dist.shasum."
+      };
+    }
+    return {
+      status: "failed",
+      algorithm: "sha1",
+      source: "shasum",
+      expected: shasum,
+      actual,
+      message: "Tarball bytes do not match npm dist.shasum."
+    };
+  }
+
+  return {
+    status: "unverified",
+    message: "Version metadata does not include dist.integrity or dist.shasum."
+  };
+}
+
+function verifyIntegrity(bytes: Uint8Array, integrity: string): TarballVerification {
+  const sha512 = integrity
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("sha512-"));
+
+  if (!sha512) {
+    return {
+      status: "unverified",
+      source: "integrity",
+      expected: integrity,
+      message: "Version metadata includes dist.integrity, but no sha512 digest was found."
+    };
+  }
+
+  const expected = sha512.slice("sha512-".length);
+  const actual = createHash("sha512").update(bytes).digest("base64");
+  if (actual === expected) {
+    return {
+      status: "verified",
+      algorithm: "sha512",
+      source: "integrity",
+      expected,
+      actual,
+      message: "Tarball bytes match npm dist.integrity."
+    };
+  }
+
+  return {
+    status: "failed",
+    algorithm: "sha512",
+    source: "integrity",
+    expected,
+    actual,
+    message: "Tarball bytes do not match npm dist.integrity."
+  };
 }

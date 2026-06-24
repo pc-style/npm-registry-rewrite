@@ -29,6 +29,27 @@ test("handles missing package json", async () => {
   expect(analysis.dependencies.totalDeclared).toBe(0);
 });
 
+test("summarizes suspicious packed content from paths and sizes", async () => {
+  const bytes = await fixtureTarball({
+    "package/package.json": JSON.stringify({ name: "fixture", version: "1.0.0" }),
+    "package/build/addon.node": "native",
+    "package/dist/parser.wasm": "wasm",
+    "package/scripts/postinstall.sh": "setup",
+    "package/.env": "SECRET=1",
+    "package/assets/model.bin": "x".repeat(1024 * 1024)
+  });
+
+  const analysis = await analyzeTarball(bytes);
+  expect(analysis.files.notablePaths).toContain("package/build/addon.node");
+  expect(analysis.files.notablePaths).toContain("package/dist/parser.wasm");
+  expect(analysis.files.suspiciousContent!.nativeBinaries.paths).toEqual(["package/build/addon.node"]);
+  expect(analysis.files.suspiciousContent!.wasmFiles.paths).toEqual(["package/dist/parser.wasm"]);
+  expect(analysis.files.suspiciousContent!.installScripts.paths).toEqual(["package/scripts/postinstall.sh"]);
+  expect(analysis.files.suspiciousContent!.shellScripts.paths).toEqual(["package/scripts/postinstall.sh"]);
+  expect(analysis.files.suspiciousContent!.sensitivePaths.paths).toEqual(["package/.env"]);
+  expect(analysis.files.suspiciousContent!.largeFiles.paths).toEqual(["package/assets/model.bin"]);
+});
+
 async function fixtureTarball(files: Record<string, string>): Promise<Uint8Array> {
   const pack = tar.pack();
   for (const [name, body] of Object.entries(files)) {
