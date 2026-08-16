@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> **Archival prepared 2026-08-16; repository-settings authorization is still required to make this repository read-only.** Development continues in [pc-style/supply-chain-guard](https://github.com/pc-style/supply-chain-guard). Supply Chain Guard preserves and extends this project's npm tarball-integrity safety property; detailed migration/provenance and the independently rerun 26/26 test evidence are recorded [there](https://github.com/pc-style/supply-chain-guard/blob/main/docs/npm-registry-rewrite-lineage.md). Full Git history and all branches are preserved.
+> **Archive pending — scheduled for archive once repository administration permission is available (prepared 2026-08-16).** Development continues in [pc-style/supply-chain-guard](https://github.com/pc-style/supply-chain-guard). Supply Chain Guard preserves and extends this project's npm tarball-integrity safety property; detailed migration/provenance and the independently rerun 26/26 test evidence are recorded [there](https://github.com/pc-style/supply-chain-guard/blob/main/docs/npm-registry-rewrite-lineage.md). Do not use this repository for new work. Full Git history and all branches are preserved.
 
 # registry-trust
 
