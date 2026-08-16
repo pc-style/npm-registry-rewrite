@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **Archived 2026-08-16.** Development continues in [pc-style/supply-chain-guard](https://github.com/pc-style/supply-chain-guard). Supply Chain Guard preserves and extends this project's npm tarball-integrity safety property; detailed migration/provenance and the independently rerun 26/26 test evidence are recorded [there](https://github.com/pc-style/supply-chain-guard/blob/main/docs/npm-registry-rewrite-lineage.md). This repository remains read-only with its full Git history and all branches preserved.
+
 # registry-trust
 
 A Bun-only MVP for an agent-first npm registry trust layer. It reviews a public npm package before install/exec, caches the generated report locally, and gates later installs on an explicit local allow/deny decision.
